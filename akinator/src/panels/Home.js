@@ -20,7 +20,7 @@ export const Home = ({ id, fetchedUser }) => {
   const startGame = async () => {
     setGameState({ ...gameState, loading: true });
     try {
-      const response = await fetch('http://localhost:8000/start_game', { method: 'POST' });
+      const response = await fetch('https://vkakinator.onrender.com/start_game', { method: 'POST' });
       const data = await response.json();
       setGameState({
         sessionId: data.session_id,
@@ -40,7 +40,7 @@ export const Home = ({ id, fetchedUser }) => {
   const answerQuestion = async (answer) => {
     setGameState({ ...gameState, loading: true });
     try {
-      const response = await fetch('http://localhost:8000/answer', {
+      const response = await fetch('https://vkakinator.onrender.com/answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: gameState.sessionId, answer })
@@ -72,7 +72,7 @@ export const Home = ({ id, fetchedUser }) => {
     if (gameState.step === 0) return;
     setGameState({ ...gameState, loading: true });
     try {
-      const response = await fetch('http://localhost:8000/back', {
+      const response = await fetch('https://vkakinator.onrender.com/back', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: gameState.sessionId })
