@@ -1,6 +1,6 @@
-fastapi==0.104.1
+fastapi==0.95.0
 uvicorn[standard]==0.24.0
-pydantic==2.5.0
+pydantic==1.10.13
 cloudscraper==1.2.71
 requests==2.31.0
 akinator==2.0.2
