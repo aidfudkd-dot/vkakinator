@@ -2,7 +2,6 @@ services:
   - type: web
     name: vkakinator
     env: docker
-    dockerfile: ./Dockerfile
     dockerfilePath: ./Dockerfile
     region: oregon
     plan: free
