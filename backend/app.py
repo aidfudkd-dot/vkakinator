@@ -1,7 +1,9 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import asyncio
 import akinator
+import cloudscraper
 
 app = FastAPI()
 
@@ -23,12 +25,36 @@ class SessionRequest(BaseModel):
 
 
 games = {}
+BROWSER_PROFILE = {"browser": "firefox", "platform": "windows", "mobile": False}
+
+
+def _build_client() -> akinator.Akinator:
+    session = cloudscraper.create_scraper(browser=BROWSER_PROFILE)
+    return akinator.Akinator(session=session)
+
+
+async def _start_game_with_retries(*, language: str = "russian", attempts: int = 3) -> akinator.Akinator:
+    last_error = None
+    for _ in range(attempts):
+        aki = _build_client()
+        try:
+            await asyncio.to_thread(aki.start_game, language=language)
+            return aki
+        except Exception as exc:
+            last_error = exc
+    raise RuntimeError("Failed to start the game after retries.") from last_error
+
+
+def _error_detail(exc: Exception) -> str:
+    cause = getattr(exc, "__cause__", None)
+    if cause:
+        return f"{exc} Cause: {cause}"
+    return str(exc)
 
 @app.post("/start_game")
 async def start_game():
     try:
-        aki = akinator.AsyncAkinator()
-        await aki.start_game(language="russian")
+        aki = await _start_game_with_retries(language="russian")
         session_id = aki.session_id
         games[session_id] = aki
         return {
@@ -38,7 +64,7 @@ async def start_game():
             "step": aki.step
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=_error_detail(e))
 
 @app.post("/answer")
 async def answer(request: AnswerRequest):
@@ -49,9 +75,9 @@ async def answer(request: AnswerRequest):
     try:
         aki = games[session_id]
         if user_input == "back":
-            await aki.back()
+            await asyncio.to_thread(aki.back)
         else:
-            await aki.answer(user_input)
+            await asyncio.to_thread(aki.answer, user_input)
         if aki.finished:
             return {
                 "finished": True,
@@ -69,7 +95,7 @@ async def answer(request: AnswerRequest):
                 "step": aki.step
             }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=_error_detail(e))
 
 @app.post("/back")
 async def back(request: SessionRequest):
@@ -78,11 +104,11 @@ async def back(request: SessionRequest):
         raise HTTPException(status_code=404, detail="Game not found")
     try:
         aki = games[session_id]
-        await aki.back()
+        await asyncio.to_thread(aki.back)
         return {
             "question": str(aki),
             "progression": aki.progression,
             "step": aki.step
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=_error_detail(e))
