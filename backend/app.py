@@ -1,70 +1,75 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'akinator.py'))
+
 from akinator.async_client import AsyncClient
-from pydantic import BaseModel
 import asyncio
 
-app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-class AnswerRequest(BaseModel):
-    session_id: str
-    answer: str
+app = Flask(__name__)
+CORS(app)
 
 games = {}
 
-@app.post("/start_game")
-async def start_game():
+@app.route('/start_game', methods=['POST'])
+def start_game():
     client = AsyncClient()
-    await client.start_game(language="russian", theme="c")
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(client.start_game(language="russian", theme="c"))
     session_id = client.session_id
     games[session_id] = client
-    return {
+    return jsonify({
         "session_id": session_id,
         "question": client.question,
         "progression": client.progression,
         "step": client.step
-    }
+    })
 
-@app.post("/answer")
-async def answer(request: AnswerRequest):
-    session_id = request.session_id
+@app.route('/answer', methods=['POST'])
+def answer():
+    data = request.json
+    session_id = data['session_id']
+    answer = data['answer']
     if session_id not in games:
-        raise HTTPException(status_code=404, detail="Game not found")
+        return jsonify({"error": "Game not found"}), 404
     client = games[session_id]
-    await client.answer(request.answer)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(client.answer(answer))
     if client.win:
-        return {
+        return jsonify({
             "finished": True,
             "name_proposition": client.name_proposition,
             "description_proposition": client.description_proposition,
             "pseudo": client.pseudo,
             "photo": client.photo,
             "final_message": "Great, guessed right one more time !"
-        }
+        })
     else:
-        return {
+        return jsonify({
             "finished": False,
             "question": client.question,
             "progression": client.progression,
             "step": client.step
-        }
+        })
 
-@app.post("/back")
-async def back(session_id: str):
+@app.route('/back', methods=['POST'])
+def back():
+    data = request.json
+    session_id = data['session_id']
     if session_id not in games:
-        raise HTTPException(status_code=404, detail="Game not found")
+        return jsonify({"error": "Game not found"}), 404
     client = games[session_id]
-    await client.back()
-    return {
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(client.back())
+    return jsonify({
         "question": client.question,
         "progression": client.progression,
         "step": client.step
-    }
+    })
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8000)
