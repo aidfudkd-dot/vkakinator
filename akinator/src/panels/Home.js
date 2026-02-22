@@ -1,11 +1,32 @@
-import { Panel, PanelHeader, Header, Button, Group, Cell, Div, Avatar, Progress, Card, CardGrid, Text, Title, Spinner } from '@vkontakte/vkui';
-import { useRouteNavigator } from '@vkontakte/vk-mini-apps-router';
-import PropTypes from 'prop-types';
+import { Panel, PanelHeader, Header, Button, Group, Cell, Div, Avatar, Progress, Card, CardGrid, Text, Title } from '@vkontakte/vkui';
 import { useState } from 'react';
+
+const API_BASE = 'https://vkakinator-1.onrender.com';
+const REQUEST_TIMEOUT_MS = 15000;
+
+const postJSON = async (path, body) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.detail || `HTTP ${response.status}`);
+    }
+    return data;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
 
 export const Home = ({ id, fetchedUser }) => {
   const { photo_200, city, first_name, last_name } = { ...fetchedUser };
-  const routeNavigator = useRouteNavigator();
 
   const [gameState, setGameState] = useState({
     sessionId: null,
@@ -14,14 +35,15 @@ export const Home = ({ id, fetchedUser }) => {
     step: 0,
     finished: false,
     result: null,
-    loading: false
+    loading: false,
+    error: null
   });
 
   const startGame = async () => {
-    setGameState({ ...gameState, loading: true });
+    if (gameState.loading) return;
+    setGameState((prev) => ({ ...prev, loading: true, error: null }));
     try {
-      const response = await fetch('https://vkakinator.onrender.com/start_game', { method: 'POST' });
-      const data = await response.json();
+      const data = await postJSON('/start_game');
       setGameState({
         sessionId: data.session_id,
         question: data.question,
@@ -29,65 +51,76 @@ export const Home = ({ id, fetchedUser }) => {
         step: data.step,
         finished: false,
         result: null,
-        loading: false
+        loading: false,
+        error: null
       });
     } catch (error) {
       console.error('Error starting game:', error);
-      setGameState({ ...gameState, loading: false });
+      setGameState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Не удалось начать игру. Попробуйте еще раз.'
+      }));
     }
   };
 
   const answerQuestion = async (answer) => {
-    setGameState({ ...gameState, loading: true });
+    if (gameState.loading || !gameState.sessionId) return;
+    setGameState((prev) => ({ ...prev, loading: true, error: null }));
     try {
-      const response = await fetch('https://vkakinator.onrender.com/answer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: gameState.sessionId, answer })
+      const data = await postJSON('/answer', {
+        session_id: gameState.sessionId,
+        answer,
+        step: gameState.step
       });
-      const data = await response.json();
       if (data.finished) {
-        setGameState({
-          ...gameState,
+        setGameState((prev) => ({
+          ...prev,
           finished: true,
           result: data,
-          loading: false
-        });
+          loading: false,
+          error: null
+        }));
       } else {
-        setGameState({
-          ...gameState,
+        setGameState((prev) => ({
+          ...prev,
           question: data.question,
           progression: data.progression,
           step: data.step,
-          loading: false
-        });
+          loading: false,
+          error: null
+        }));
       }
     } catch (error) {
       console.error('Error answering:', error);
-      setGameState({ ...gameState, loading: false });
+      setGameState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Сервер отвечает слишком долго. Попробуйте снова.'
+      }));
     }
   };
 
   const goBack = async () => {
-    if (gameState.step === 0) return;
-    setGameState({ ...gameState, loading: true });
+    if (gameState.loading || gameState.step === 0 || !gameState.sessionId) return;
+    setGameState((prev) => ({ ...prev, loading: true, error: null }));
     try {
-      const response = await fetch('https://vkakinator.onrender.com/back', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: gameState.sessionId })
-      });
-      const data = await response.json();
-      setGameState({
-        ...gameState,
+      const data = await postJSON('/back', { session_id: gameState.sessionId });
+      setGameState((prev) => ({
+        ...prev,
         question: data.question,
         progression: data.progression,
         step: data.step,
-        loading: false
-      });
+        loading: false,
+        error: null
+      }));
     } catch (error) {
       console.error('Error going back:', error);
-      setGameState({ ...gameState, loading: false });
+      setGameState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Не удалось вернуться на предыдущий вопрос.'
+      }));
     }
   };
 
@@ -103,10 +136,15 @@ export const Home = ({ id, fetchedUser }) => {
       )}
 
       <Group header={<Header size="s">Игра Akinator</Header>}>
+        {gameState.error && (
+          <Div>
+            <Text style={{ color: 'var(--vkui--color_text_negative)' }}>{gameState.error}</Text>
+          </Div>
+        )}
         {!gameState.sessionId ? (
           <Div>
             <Button stretched size="l" mode="primary" onClick={startGame} disabled={gameState.loading}>
-              {gameState.loading ? <Spinner size="small" /> : 'Начать игру'}
+              {gameState.loading ? 'Загрузка...' : 'Начать игру'}
             </Button>
           </Div>
         ) : gameState.finished ? (
