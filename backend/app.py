@@ -1,7 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import asyncio
 import akinator
 
 app = FastAPI()
@@ -18,15 +17,18 @@ class AnswerRequest(BaseModel):
     session_id: str
     answer: str
 
+
+class SessionRequest(BaseModel):
+    session_id: str
+
+
 games = {}
 
 @app.post("/start_game")
 async def start_game():
     try:
-        aki = akinator.Akinator()
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(aki.start_game(language="russian"))
+        aki = akinator.AsyncAkinator()
+        await aki.start_game(language="russian")
         session_id = aki.session_id
         games[session_id] = aki
         return {
@@ -46,12 +48,10 @@ async def answer(request: AnswerRequest):
         raise HTTPException(status_code=404, detail="Game not found")
     try:
         aki = games[session_id]
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         if user_input == "back":
-            loop.run_until_complete(aki.back())
+            await aki.back()
         else:
-            loop.run_until_complete(aki.answer(user_input))
+            await aki.answer(user_input)
         if aki.finished:
             return {
                 "finished": True,
@@ -72,14 +72,13 @@ async def answer(request: AnswerRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/back")
-async def back(session_id: str):
+async def back(request: SessionRequest):
+    session_id = request.session_id
     if session_id not in games:
         raise HTTPException(status_code=404, detail="Game not found")
     try:
         aki = games[session_id]
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(aki.back())
+        await aki.back()
         return {
             "question": str(aki),
             "progression": aki.progression,
